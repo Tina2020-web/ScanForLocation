@@ -2,8 +2,10 @@
 import psycopg2
 import psycopg2.extras
 from datetime import datetime
+import pandas as pd
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
+EXCEL_PATH = os.path.join(os.path.dirname(__file__), "VIN_To_LocationCode.xlsx")
 
 def get_connection():
     conn = psycopg2.connect(DATABASE_URL)
