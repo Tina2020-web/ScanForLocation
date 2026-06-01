@@ -301,9 +301,11 @@ function renderRecords(records) {
 
 function filterRecords() {
   const q = document.getElementById('search-input').value.toLowerCase();
-  renderRecords(allRecords.filter(r =>
-    r.vin.toLowerCase().includes(q) || r.location_code.toLowerCase().includes(q)
-  ));
+  renderRecords(allRecords.filter(r => {
+    const vin = (r.VIN || r.vin || '').toLowerCase();
+    const loc = (r.LOCATION_CODE || r.location_code || '').toLowerCase();
+    return vin.includes(q) || loc.includes(q);
+  }));
 }
 
 async function deleteRecord(vin) {
