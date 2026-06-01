@@ -181,11 +181,15 @@ function restartScan() {
 async function doLookup() {
   const vin = document.getElementById('lookup-input').value.trim();
   if (!vin) return;
-  const res = await fetch('/api/lookup?vin=' + encodeURIComponent(vin));
-  const data = await res.json();
   const box = document.getElementById('lookup-result');
   box.style.display = 'block';
+
+  // 先尝试精确匹配
+  const res = await fetch('/api/lookup?vin=' + encodeURIComponent(vin));
+  const data = await res.json();
+
   if (data.found) {
+    // 精确匹配找到
     const loc = data.data.location_code || data.data.LOCATION_CODE;
     const v   = data.data.vin || data.data.VIN;
     box.className = 'result-box found';
@@ -193,8 +197,36 @@ async function doLookup() {
       <div class="location">${loc}</div>
       <div class="vin-text">VIN: ${v}</div>`;
   } else {
-    box.className = 'result-box notfound';
-    box.innerHTML = `<h2>Not Found</h2><div class="vin-text">VIN: ${vin} not in database</div>`;
+    // 精确匹配失败 → 模糊搜索
+    const matches = allRecords.filter(r => {
+      const v = getField(r, 'VIN', 'vin').toUpperCase();
+      return v.includes(vin.toUpperCase());
+    });
+
+    if (matches.length === 0) {
+      box.className = 'result-box notfound';
+      box.innerHTML = `<h2>Not Found</h2><div class="vin-text">No VIN containing "${vin}" found</div>`;
+    } else if (matches.length === 1) {
+      // 只有一个结果直接显示
+      const loc = getField(matches[0], 'LOCATION_CODE', 'location_code');
+      const v   = getField(matches[0], 'VIN', 'vin');
+      box.className = 'result-box found';
+      box.innerHTML = `<h2>Location Code</h2>
+        <div class="location">${loc}</div>
+        <div class="vin-text">VIN: ${v}</div>`;
+    } else {
+      // 多个结果列表显示
+      box.className = 'result-box found';
+      box.innerHTML = `<h2>Found ${matches.length} records containing "${vin}"</h2>` +
+        matches.map(r => {
+          const loc = getField(r, 'LOCATION_CODE', 'location_code');
+          const v   = getField(r, 'VIN', 'vin');
+          return `<div style="padding:8px 0;border-bottom:1px solid #eee">
+            <div style="font-weight:bold;font-size:0.9rem">${v}</div>
+            <div style="color:#005a9e;font-size:1.1rem;font-weight:bold">${loc}</div>
+          </div>`;
+        }).join('');
+    }
   }
 }
 
@@ -282,6 +314,7 @@ async function doImport() {
 // ── Init: 等 CDN 加载完再启动 ─────────────────────────────────────────────────
 window.addEventListener('load', () => {
   startScanner();
+  loadRecords(); // 预加载数据供模糊搜索使用
 });
 </script>
 </body>
