@@ -76,12 +76,17 @@ def api_import():
     f = request.files["file"]
     if not f.filename.endswith((".xlsx", ".xls")):
         return jsonify({"error": "Only Excel files supported"}), 400
+
+    # Save uploaded file to temp
     with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
         f.save(tmp.name)
         result = import_from_excel(tmp.name)
     os.unlink(tmp.name)
 
-    # Auto push updated Excel to GitHub
+    if "error" in result:
+        return jsonify(result), 400
+
+    # Auto push merged Excel to GitHub
     pushed = git_push_excel()
     result["github_pushed"] = pushed
 
