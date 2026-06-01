@@ -183,13 +183,20 @@ async function doLookup() {
   if (!vin) return;
   const box = document.getElementById('lookup-result');
   box.style.display = 'block';
+  box.className = 'result-box';
+  box.innerHTML = '<p>Searching...</p>';
+
+  // 确保 allRecords 已加载
+  if (!allRecords || allRecords.length === 0) {
+    const res = await fetch('/api/records');
+    allRecords = await res.json();
+  }
 
   // 先尝试精确匹配
   const res = await fetch('/api/lookup?vin=' + encodeURIComponent(vin));
   const data = await res.json();
 
   if (data.found) {
-    // 精确匹配找到
     const loc = data.data.location_code || data.data.LOCATION_CODE;
     const v   = data.data.vin || data.data.VIN;
     box.className = 'result-box found';
@@ -197,7 +204,7 @@ async function doLookup() {
       <div class="location">${loc}</div>
       <div class="vin-text">VIN: ${v}</div>`;
   } else {
-    // 精确匹配失败 → 模糊搜索
+    // 模糊搜索
     const matches = allRecords.filter(r => {
       const v = getField(r, 'VIN', 'vin').toUpperCase();
       return v.includes(vin.toUpperCase());
@@ -207,7 +214,6 @@ async function doLookup() {
       box.className = 'result-box notfound';
       box.innerHTML = `<h2>Not Found</h2><div class="vin-text">No VIN containing "${vin}" found</div>`;
     } else if (matches.length === 1) {
-      // 只有一个结果直接显示
       const loc = getField(matches[0], 'LOCATION_CODE', 'location_code');
       const v   = getField(matches[0], 'VIN', 'vin');
       box.className = 'result-box found';
@@ -215,7 +221,6 @@ async function doLookup() {
         <div class="location">${loc}</div>
         <div class="vin-text">VIN: ${v}</div>`;
     } else {
-      // 多个结果列表显示
       box.className = 'result-box found';
       box.innerHTML = `<h2>Found ${matches.length} records containing "${vin}"</h2>` +
         matches.map(r => {
