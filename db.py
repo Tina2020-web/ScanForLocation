@@ -1,62 +1,53 @@
 ﻿import os
-import psycopg2
-import psycopg2.extras
-from datetime import datetime
 import pandas as pd
+from datetime import datetime
 
-DATABASE_URL = os.environ.get("DATABASE_URL")
 EXCEL_PATH = os.path.join(os.path.dirname(__file__), "VIN_To_LocationCode.xlsx")
 
-def get_connection():
-    conn = psycopg2.connect(DATABASE_URL)
-    return conn
+def load_data() -> pd.DataFrame:
+    if not os.path.exists(EXCEL_PATH):
+        return pd.DataFrame(columns=["VIN", "LOCATION_CODE"])
+    df = pd.read_excel(EXCEL_PATH)
+    df.columns = [c.strip().upper() for c in df.columns]
+    vin_col = next((c for c in df.columns if "VIN" in c), None)
+    loc_col = next((c for c in df.columns if "LOC" in c or "CODE" in c), None)
+    if not vin_col or not loc_col:
+        return pd.DataFrame(columns=["VIN", "LOCATION_CODE"])
+    df = df.rename(columns={vin_col: "VIN", loc_col: "LOCATION_CODE"})
+    df["VIN"] = df["VIN"].astype(str).str.strip().str.upper()
+    df["LOCATION_CODE"] = df["LOCATION_CODE"].astype(str).str.strip()
+    return df[["VIN", "LOCATION_CODE"]].dropna()
+
+def save_data(df: pd.DataFrame):
+    df.to_excel(EXCEL_PATH, index=False)
 
 def init_db():
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS vin_location (
-                    id            SERIAL PRIMARY KEY,
-                    vin           TEXT   UNIQUE NOT NULL,
-                    location_code TEXT   NOT NULL,
-                    updated_at    TEXT   NOT NULL
-                )
-            """)
-        conn.commit()
+    pass  # No DB needed
 
 def lookup_vin(vin: str):
-    with get_connection() as conn:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(
-                "SELECT * FROM vin_location WHERE vin = %s", (vin.strip().upper(),)
-            )
-            row = cur.fetchone()
-    return dict(row) if row else None
+    df = load_data()
+    result = df[df["VIN"] == vin.strip().upper()]
+    if result.empty:
+        return None
+    row = result.iloc[0]
+    return {"vin": row["VIN"], "location_code": row["LOCATION_CODE"]}
 
 def upsert_vin(vin: str, location_code: str):
-    now = datetime.now().isoformat()
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                INSERT INTO vin_location (vin, location_code, updated_at)
-                VALUES (%s, %s, %s)
-                ON CONFLICT (vin) DO UPDATE SET
-                    location_code = EXCLUDED.location_code,
-                    updated_at    = EXCLUDED.updated_at
-            """, (vin.strip().upper(), location_code.strip(), now))
-        conn.commit()
+    df = load_data()
+    vin = vin.strip().upper()
+    loc = location_code.strip()
+    if vin in df["VIN"].values:
+        df.loc[df["VIN"] == vin, "LOCATION_CODE"] = loc
+    else:
+        new_row = pd.DataFrame([{"VIN": vin, "LOCATION_CODE": loc}])
+        df = pd.concat([df, new_row], ignore_index=True)
+    save_data(df)
 
 def get_all():
-    with get_connection() as conn:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute("SELECT * FROM vin_location ORDER BY updated_at DESC")
-            rows = cur.fetchall()
-    return [dict(r) for r in rows]
+    df = load_data()
+    return df.to_dict(orient="records")
 
 def delete_vin(vin: str):
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "DELETE FROM vin_location WHERE vin = %s", (vin.strip().upper(),)
-            )
-        conn.commit()
+    df = load_data()
+    df = df[df["VIN"] != vin.strip().upper()]
+    save_data(df)
