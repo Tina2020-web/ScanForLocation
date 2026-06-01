@@ -77,20 +77,41 @@ def api_import():
     if not f.filename.endswith((".xlsx", ".xls")):
         return jsonify({"error": "Only Excel files supported"}), 400
 
-    # Save uploaded file to temp
     with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
         f.save(tmp.name)
+        print(f"[DEBUG] Uploaded file saved to: {tmp.name}")
         result = import_from_excel(tmp.name)
+        print(f"[DEBUG] Import result: {result}")
     os.unlink(tmp.name)
 
     if "error" in result:
         return jsonify(result), 400
 
-    # Auto push merged Excel to GitHub
+    # Verify data was saved
+    from db import load_data, EXCEL_PATH
+    df = load_data()
+    print(f"[DEBUG] Excel path: {EXCEL_PATH}")
+    print(f"[DEBUG] Total records after import: {len(df)}")
+    print(f"[DEBUG] Last 3 records:\n{df.tail(3)}")
+
     pushed = git_push_excel()
+    print(f"[DEBUG] Git push result: {pushed}")
     result["github_pushed"] = pushed
+    result["total_records"] = len(df)
 
     return jsonify(result)
+
+# ── API: Debug ────────────────────────────────────────────────────────────────
+@app.route("/api/debug", methods=["GET"])
+def api_debug():
+    from db import load_data, EXCEL_PATH
+    df = load_data()
+    return jsonify({
+        "excel_path":    EXCEL_PATH,
+        "excel_exists":  os.path.exists(EXCEL_PATH),
+        "total_records": len(df),
+        "sample":        df.tail(5).to_dict(orient="records")
+    })
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
