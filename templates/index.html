@@ -254,8 +254,7 @@ async function doLookup() {
     box.className = 'result-box found';
     box.innerHTML = `<h2>Location Code</h2>
       <div class="location">${data.data.location_code}</div>
-      <div class="vin-text">VIN: ${data.data.vin}</div>
-      <div class="vin-text">Updated: ${data.data.updated_at.substring(0,19)}</div>`;
+      <div class="vin-text">VIN: ${data.data.vin}</div>`;
   } else {
     box.className = 'result-box notfound';
     box.innerHTML = `<h2>Not Found</h2><div class="vin-text">VIN: ${vin} not in database</div>`;
@@ -292,11 +291,10 @@ function renderRecords(records) {
   list.innerHTML = records.map(r => `
     <div class="record-card">
       <div>
-        <div class="vin">${r.vin}</div>
-        <div class="date">${r.updated_at.substring(0,19)}</div>
+        <div class="vin">${r.VIN || r.vin}</div>
       </div>
-      <div class="loc">${r.location_code}</div>
-      <button class="del-btn" onclick="deleteRecord('${r.vin}')">🗑️</button>
+      <div class="loc">${r.LOCATION_CODE || r.location_code}</div>
+      <button class="del-btn" onclick="deleteRecord('${r.VIN || r.vin}')">🗑️</button>
     </div>
   `).join('');
 }
