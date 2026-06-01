@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ScanForLocation</title>
+  <script src="https://unpkg.com/html5-qrcode"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, sans-serif; background: #f0f2f5; color: #333; }
+
+    header {
+      background: #005a9e; color: white;
+      padding: 16px; text-align: center; font-size: 1.2rem; font-weight: bold;
+    }
+
+    .tabs {
+      display: flex; background: #004080;
+    }
+    .tab {
+      flex: 1; padding: 12px; text-align: center; color: #aad4ff;
+      cursor: pointer; font-size: 0.9rem; border-bottom: 3px solid transparent;
+    }
+    .tab.active { color: white; border-bottom: 3px solid #fff; }
+
+    .page { display: none; padding: 16px; }
+    .page.active { display: block; }
+
+    /* Scan page */
+    #reader { width: 100%; border-radius: 12px; overflow: hidden; }
+    .result-box {
+      margin-top: 16px; padding: 16px; border-radius: 12px;
+      background: white; box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      display: none;
+    }
+    .result-box.found { border-left: 5px solid #28a745; }
+    .result-box.notfound { border-left: 5px solid #dc3545; }
+    .result-box h2 { font-size: 1rem; color: #666; margin-bottom: 8px; }
+    .result-box .location { font-size: 2rem; font-weight: bold; color: #005a9e; }
+    .result-box .vin-text { font-size: 0.85rem; color: #888; margin-top: 4px; }
+
+    /* Manual lookup */
+    .input-group { display: flex; gap: 8px; margin-bottom: 12px; }
+    input[type=text] {
+      flex: 1; padding: 12px; border: 1px solid #ccc;
+      border-radius: 8px; font-size: 1rem;
+    }
+    button {
+      padding: 12px 20px; background: #005a9e; color: white;
+      border: none; border-radius: 8px; font-size: 1rem; cursor: pointer;
+    }
+    button:active { background: #004080; }
+    button.danger { background: #dc3545; }
+    button.success { background: #28a745; }
+
+    /* Records table */
+    .record-card {
+      background: white; border-radius: 10px; padding: 12px 16px;
+      margin-bottom: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .record-card .vin { font-weight: bold; font-size: 0.95rem; }
+    .record-card .loc { color: #005a9e; font-size: 1.1rem; font-weight: bold; }
+    .record-card .date { font-size: 0.75rem; color: #aaa; }
+    .del-btn {
+      background: none; color: #dc3545; border: none;
+      font-size: 1.2rem; cursor: pointer; padding: 4px 8px;
+    }
+
+    /* Import */
+    .import-box {
+      background: white; border-radius: 12px; padding: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .import-box label {
+      display: block; margin-bottom: 8px; font-weight: bold;
+    }
+    input[type=file] { width: 100%; margin-bottom: 12px; }
+    .summary {
+      margin-top: 12px; padding: 12px; background: #f8f9fa;
+      border-radius: 8px; font-size: 0.9rem; display: none;
+    }
+    .summary .row { display: flex; justify-content: space-between; padding: 4px 0; }
+    .badge {
+      padding: 2px 10px; border-radius: 12px; color: white; font-size: 0.8rem;
+    }
+    .badge.green { background: #28a745; }
+    .badge.blue  { background: #005a9e; }
+    .badge.gray  { background: #6c757d; }
+
+    /* Add form */
+    .card {
+      background: white; border-radius: 12px; padding: 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 16px;
+    }
+    .card h3 { margin-bottom: 12px; font-size: 1rem; color: #555; }
+    .toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      background: #333; color: white; padding: 10px 24px;
+      border-radius: 24px; font-size: 0.9rem; display: none; z-index: 999;
+    }
+  </style>
+</head>
+<body>
+
+<header>📦 ScanForLocation</header>
+
+<div class="tabs">
+  <div class="tab active" onclick="showTab('scan')">📷 Scan</div>
+  <div class="tab" onclick="showTab('lookup')">🔍 Lookup</div>
+  <div class="tab" onclick="showTab('records')">📋 Records</div>
+  <div class="tab" onclick="showTab('import')">📤 Import</div>
+</div>
+
+<!-- ── SCAN PAGE ─────────────────────────────────────────────────── -->
+<div id="page-scan" class="page active">
+  <div id="reader"></div>
+  <div id="scan-result" class="result-box">
+    <h2>Location Code</h2>
+    <div class="location" id="scan-location"></div>
+    <div class="vin-text" id="scan-vin"></div>
+  </div>
+  <div style="margin-top:12px; text-align:center;">
+    <button onclick="restartScan()">🔄 Scan Again</button>
+  </div>
+</div>
+
+<!-- ── LOOKUP PAGE ───────────────────────────────────────────────── -->
+<div id="page-lookup" class="page">
+  <div class="card">
+    <h3>Manual VIN Lookup</h3>
+    <div class="input-group">
+      <input type="text" id="lookup-input" placeholder="Enter VIN..." />
+      <button onclick="doLookup()">Search</button>
+    </div>
+    <div id="lookup-result" class="result-box"></div>
+  </div>
+  <div class="card">
+    <h3>Add / Update Record</h3>
+    <input type="text" id="add-vin" placeholder="VIN" style="width:100%;margin-bottom:8px"/>
+    <input type="text" id="add-loc" placeholder="Location Code" style="width:100%;margin-bottom:8px"/>
+    <button class="success" onclick="addRecord()" style="width:100%">💾 Save</button>
+  </div>
+</div>
+
+<!-- ── RECORDS PAGE ──────────────────────────────────────────────── -->
+<div id="page-records" class="page">
+  <div class="input-group">
+    <input type="text" id="search-input" placeholder="Filter VIN or Location..." oninput="filterRecords()"/>
+  </div>
+  <div id="records-list"></div>
+</div>
+
+<!-- ── IMPORT PAGE ───────────────────────────────────────────────── -->
+<div id="page-import" class="page">
+  <div class="import-box">
+    <label>📂 Upload Excel File (VIN_To_LocationCode.xlsx)</label>
+    <input type="file" id="excel-file" accept=".xlsx,.xls"/>
+    <button onclick="doImport()" style="width:100%">⬆️ Import / Update</button>
+    <div class="summary" id="import-summary">
+      <div class="row">
+        <span>✅ Added</span>
+        <span class="badge green" id="s-added">0</span>
+      </div>
+      <div class="row">
+        <span>🔄 Updated</span>
+        <span class="badge blue" id="s-updated">0</span>
+      </div>
+      <div class="row">
+        <span>⏭️ Skipped</span>
+        <span class="badge gray" id="s-skipped">0</span>
+      </div>
+      <div id="s-errors" style="color:#dc3545;margin-top:8px;font-size:0.8rem;"></div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── Tab navigation ───────────────────────────────────────────────────────────
+function showTab(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  event.target.classList.add('active');
+  if (name === 'records') loadRecords();
+  if (name === 'scan') startScanner();
+  else stopScanner();
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.display = 'block';
+  setTimeout(() => t.style.display = 'none', 2500);
+}
+
+// ── QR Scanner ────────────────────────────────────────────────────────────────
+let scanner = null;
+let lastVin = null;
+
+function startScanner() {
+  if (scanner) return;
+  scanner = new Html5Qrcode("reader");
+  scanner.start(
+    { facingMode: "environment" },
+    { fps: 10, qrbox: { width: 280, height: 280 } },
+    onScanSuccess
+  ).catch(err => console.warn("Camera error:", err));
+}
+
+function stopScanner() {
+  if (scanner) {
+    scanner.stop().then(() => { scanner = null; });
+  }
+}
+
+async function onScanSuccess(vin) {
+  if (vin === lastVin) return;
+  lastVin = vin;
+  stopScanner();
+  const res = await fetch('/api/lookup?vin=' + encodeURIComponent(vin));
+  const data = await res.json();
+  const box = document.getElementById('scan-result');
+  box.style.display = 'block';
+  if (data.found) {
+    box.className = 'result-box found';
+    document.getElementById('scan-location').textContent = data.data.location_code;
+    document.getElementById('scan-vin').textContent = 'VIN: ' + vin;
+  } else {
+    box.className = 'result-box notfound';
+    document.getElementById('scan-location').textContent = 'Not Found';
+    document.getElementById('scan-vin').textContent = 'VIN: ' + vin;
+  }
+}
+
+function restartScan() {
+  lastVin = null;
+  document.getElementById('scan-result').style.display = 'none';
+  startScanner();
+}
+
+// ── Lookup ────────────────────────────────────────────────────────────────────
+async function doLookup() {
+  const vin = document.getElementById('lookup-input').value.trim();
+  if (!vin) return;
+  const res = await fetch('/api/lookup?vin=' + encodeURIComponent(vin));
+  const data = await res.json();
+  const box = document.getElementById('lookup-result');
+  box.style.display = 'block';
+  if (data.found) {
+    box.className = 'result-box found';
+    box.innerHTML = `<h2>Location Code</h2>
+      <div class="location">${data.data.location_code}</div>
+      <div class="vin-text">VIN: ${data.data.vin}</div>
+      <div class="vin-text">Updated: ${data.data.updated_at.substring(0,19)}</div>`;
+  } else {
+    box.className = 'result-box notfound';
+    box.innerHTML = `<h2>Not Found</h2><div class="vin-text">VIN: ${vin} not in database</div>`;
+  }
+}
+
+// ── Add / Update ──────────────────────────────────────────────────────────────
+async function addRecord() {
+  const vin = document.getElementById('add-vin').value.trim();
+  const loc = document.getElementById('add-loc').value.trim();
+  if (!vin || !loc) { toast('VIN and Location required'); return; }
+  await fetch('/api/upsert', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ vin, location_code: loc })
+  });
+  toast('✅ Saved!');
+  document.getElementById('add-vin').value = '';
+  document.getElementById('add-loc').value = '';
+}
+
+// ── Records ───────────────────────────────────────────────────────────────────
+let allRecords = [];
+
+async function loadRecords() {
+  const res = await fetch('/api/records');
+  allRecords = await res.json();
+  renderRecords(allRecords);
+}
+
+function renderRecords(records) {
+  const list = document.getElementById('records-list');
+  if (!records.length) { list.innerHTML = '<p style="text-align:center;color:#aaa;padding:20px">No records</p>'; return; }
+  list.innerHTML = records.map(r => `
+    <div class="record-card">
+      <div>
+        <div class="vin">${r.vin}</div>
+        <div class="date">${r.updated_at.substring(0,19)}</div>
+      </div>
+      <div class="loc">${r.location_code}</div>
+      <button class="del-btn" onclick="deleteRecord('${r.vin}')">🗑️</button>
+    </div>
+  `).join('');
+}
+
+function filterRecords() {
+  const q = document.getElementById('search-input').value.toLowerCase();
+  renderRecords(allRecords.filter(r =>
+    r.vin.toLowerCase().includes(q) || r.location_code.toLowerCase().includes(q)
+  ));
+}
+
+async function deleteRecord(vin) {
+  if (!confirm('Delete ' + vin + '?')) return;
+  await fetch('/api/delete?vin=' + encodeURIComponent(vin), { method: 'DELETE' });
+  toast('🗑️ Deleted');
+  loadRecords();
+}
+
+// ── Import Excel ──────────────────────────────────────────────────────────────
+async function doImport() {
+  const file = document.getElementById('excel-file').files[0];
+  if (!file) { toast('Please select a file'); return; }
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch('/api/import', { method: 'POST', body: form });
+  const data = await res.json();
+  if (data.error) { toast('❌ ' + data.error); return; }
+  document.getElementById('s-added').textContent   = data.added;
+  document.getElementById('s-updated').textContent = data.updated;
+  document.getElementById('s-skipped').textContent = data.skipped;
+  document.getElementById('s-errors').textContent  = data.errors.join('\n');
+  document.getElementById('import-summary').style.display = 'block';
+  toast(`✅ Done: +${data.added} added, ${data.updated} updated`);
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+startScanner();
+</script>
+</body>
+</html>
