@@ -1,10 +1,29 @@
 ﻿from flask import Flask, request, jsonify, render_template
-import os, tempfile
-from db import init_db, lookup_vin, get_all, upsert_vin, delete_vin
+import os, tempfile, subprocess
+from db import init_db, lookup_vin, get_all, upsert_vin, delete_vin, EXCEL_PATH
 from import_excel import import_from_excel
 
 app = Flask(__name__)
 init_db()
+
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
+GITHUB_REPO  = os.environ.get("GITHUB_REPO", "Tina2020-web/ScanForLocation")
+GITHUB_USER  = os.environ.get("GITHUB_USER", "Tina2020-web")
+
+def git_push_excel():
+    """Commit and push updated Excel back to GitHub"""
+    try:
+        repo_url = f"https://{GITHUB_USER}:{GITHUB_TOKEN}@github.com/{GITHUB_REPO}.git"
+        subprocess.run(["git", "config", "user.email", "bot@cimsscanner.com"], check=True)
+        subprocess.run(["git", "config", "user.name",  "CIMSScanner Bot"],     check=True)
+        subprocess.run(["git", "remote", "set-url", "origin", repo_url],       check=True)
+        subprocess.run(["git", "add",    "VIN_To_LocationCode.xlsx"],           check=True)
+        subprocess.run(["git", "commit", "-m", "data: update VIN locations via web upload"], check=True)
+        subprocess.run(["git", "push",   "origin", "main"],                    check=True)
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"Git push failed: {e}")
+        return False
 
 # ── Pages ────────────────────────────────────────────────────────────────────
 @app.route("/")
@@ -36,6 +55,7 @@ def api_upsert():
     if not vin or not loc:
         return jsonify({"error": "vin and location_code required"}), 400
     upsert_vin(vin, loc)
+    git_push_excel()
     return jsonify({"success": True})
 
 # ── API: Delete ───────────────────────────────────────────────────────────────
@@ -45,6 +65,7 @@ def api_delete():
     if not vin:
         return jsonify({"error": "VIN required"}), 400
     delete_vin(vin)
+    git_push_excel()
     return jsonify({"success": True})
 
 # ── API: Upload Excel ─────────────────────────────────────────────────────────
@@ -59,6 +80,11 @@ def api_import():
         f.save(tmp.name)
         result = import_from_excel(tmp.name)
     os.unlink(tmp.name)
+
+    # Auto push updated Excel to GitHub
+    pushed = git_push_excel()
+    result["github_pushed"] = pushed
+
     return jsonify(result)
 
 if __name__ == "__main__":
